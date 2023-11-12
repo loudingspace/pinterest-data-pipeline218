@@ -10,8 +10,8 @@ These are:
 
 - `pinterest_data` data about posts updated to Pinterest
 
-````yaml
-  {
+```yaml
+{
   "index": 7528,
   "unique_id": "fbe53c66-3442-4773-b19e-d3ec6f54dddf",
   "title": "No Title Data Available",
@@ -23,28 +23,33 @@ These are:
   "image_src": "Image src error.",
   "downloaded": 0,
   "save_location": "Local save in /data/mens-fashion",
-  "category": "mens-fashion"
-  }
+  "category": "mens-fashion",
+}
+```
 
-  - `geolocation_data` data about the location of each post
-```yaml
-    {
-    "ind": 7528,
-    "timestamp": "2020-08-28 03:52:47",
-    "latitude": -89.9787,
-    "longitude": -173.293,
-    "country": "Albania"
-    }
+- `geolocation_data` data about the location of each post
 
-  - `user_data` data about the user that updates the post.
 ```yaml
-    {
-    "ind": 7528,
-    "first_name": "Abigail",
-    "last_name": "Ali",
-    "age": 20,
-    "date_joined": "2015-10-24 11:23:51"
-    }
+{
+  "ind": 7528,
+  "timestamp": "2020-08-28 03:52:47",
+  "latitude": -89.9787,
+  "longitude": -173.293,
+  "country": "Albania",
+}
+```
+
+- `user_data` data about the user that updates the post.
+
+```yaml
+{
+  "ind": 7528,
+  "first_name": "Abigail",
+  "last_name": "Ali",
+  "age": 20,
+  "date_joined": "2015-10-24 11:23:51",
+}
+```
 
 We note the index number is `ind` in geo and user but `index` in pin.
 
@@ -71,4 +76,7 @@ These are the 3 topics that were created:
 This was verified by running
 
     ./kafka-topics.sh --bootstrap-server $BOOTSTRAP_SERVER_STRING --command-config client.properties --list
-````
+
+```
+
+```
