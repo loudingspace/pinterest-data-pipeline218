@@ -10,6 +10,7 @@ These are:
 
 - `pinterest_data` data about posts updated to Pinterest
 
+````yaml
   {
   "index": 7528,
   "unique_id": "fbe53c66-3442-4773-b19e-d3ec6f54dddf",
@@ -26,7 +27,7 @@ These are:
   }
 
   - `geolocation_data` data about the location of each post
-
+```yaml
     {
     "ind": 7528,
     "timestamp": "2020-08-28 03:52:47",
@@ -36,7 +37,7 @@ These are:
     }
 
   - `user_data` data about the user that updates the post.
-
+```yaml
     {
     "ind": 7528,
     "first_name": "Abigail",
@@ -70,3 +71,4 @@ These are the 3 topics that were created:
 This was verified by running
 
     ./kafka-topics.sh --bootstrap-server $BOOTSTRAP_SERVER_STRING --command-config client.properties --list
+````
