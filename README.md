@@ -77,6 +77,20 @@ This was verified by running
 
     ./kafka-topics.sh --bootstrap-server $BOOTSTRAP_SERVER_STRING --command-config client.properties --list
 
-```
+We created a connection from the MSK cluster to an S3 bucket by first creating a customer plugin in MSK Connect. We downloaded and copied the Confluent.io Amazon S3 connector and copied it into our S3 bucket, and then created the custom plugin using the name <userid>-plugin. We then created a connector, using our <userid>-ec-access-role for authentication to the cluster, and the following connector configuration:
 
+```
+connector.class=io.confluent.connect.s3.S3SinkConnector
+s3.region=us-east-1
+flush.size=1
+schema.compatibility=NONE
+tasks.max=3
+topics.regex=<userid>.*
+format.class=io.confluent.connect.s3.format.json.JsonFormat
+partitioner.class=io.confluent.connect.storage.partitioner.DefaultPartitioner
+value.converter.schemas.enable=false
+value.converter=org.apache.kafka.connect.json.JsonConverter
+storage.class=io.confluent.connect.s3.storage.S3Storage
+key.converter=org.apache.kafka.connect.storage.StringConverter
+s3.bucket.name=user-<userid></userid>-bucket
 ```
