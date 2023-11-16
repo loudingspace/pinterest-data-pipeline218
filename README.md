@@ -176,3 +176,30 @@ OpenJDK 64-Bit Server VM warning: If the number of processors is expected to inc
 This was then reflected in the S3 bucket store, where they were stored `topics/<your_UserId>.pin/partition=0/`:
 
 <img src="./images/s3_geo_json.png" alt="Picture of the S3 store for the .geo messages" width="500px">
+
+## Batch Processing: Databricks
+
+In order to clean and query the data, we will be reading from our S3 bucket to Databricks. To do this we used the file `Mount S3 bucket.ipynb`, which is a Workbook we used in Databricks. This reads an `authentication_credentials.csv` file which was generated from the IAM user settings in AWS. We then extract the relevant details from this file and use them as constants we can use to create dataframes. A function was created to read the three json files:
+
+```
+def make_dataframe(table_name):
+    ''' Makes a dataframe for each of the data buckets in the S3 bucket for pin, geo and user
+
+    Argument:   table_name (string)
+    Returns:    dataframe
+    '''
+
+    file_location = f"/mnt/$MY_USERNAME-bucket/topics/0af8d0adfd13.{table_name}/partition=0/*.json"
+    # you need to remember to put in the partition=0 bit!
+    file_type = "json"
+    # Ask Spark to infer the schema
+    infer_schema = "true"
+    # Read in JSONs from mounted S3 bucket
+    df = spark.read.format(file_type) \
+    .option("inferSchema", infer_schema) \
+    .load(file_location)
+    return df
+
+```
+
+We used this function to create three dataframes, one for each of the user, pin and geo buckets we created from the Kafka cluster.
