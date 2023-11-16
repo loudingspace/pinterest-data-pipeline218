@@ -94,3 +94,85 @@ storage.class=io.confluent.connect.s3.storage.S3Storage
 key.converter=org.apache.kafka.connect.storage.StringConverter
 s3.bucket.name=user-<userid></userid>-bucket
 ```
+
+### Batch processing: configuring an API in API Gateway
+
+In API Gateway, we create a `/{proxy+}` resource. CORS was enabled and a HTTP method was then added. We supplied as the Endpoint URL the PublicDNS from our ec2 instance. The API was then deployed using Invoke URL, which we stored for use later in our pipeline. Of note is that we must specify the endpoint using `http` and not `https`, even though it defaults to https when copying from AWS (this was the cause of much debugging!) The endpoint will be the main means of communicating with our kafka rest proxy and takes the form `http://KafkaClientEC2InstancePublicDNS:8082/{proxy}`
+
+We then installed the Confluent package for the Kafka REST Proxy on our ec2 instance. For this we modified the `kafka-rest.properties` file by adding `bootstrap.servers` and `zookeeper.connect` variables. As we had already installed the `aws-msk-iam-auth` in our $CLASSPATH we had no need to this again, but we added the following to the file, where `client` was used:
+
+```
+# Sets up TLS for encryption and SASL for authN.
+client.security.protocol = SASL_SSL
+
+# Identifies the SASL mechanism to use.
+client.sasl.mechanism = AWS_MSK_IAM
+
+# Binds SASL client implementation.
+client.sasl.jaas.config = software.amazon.msk.auth.iam.IAMLoginModule required awsRoleArn="Your Access Role";
+
+# Encapsulates constructing a SigV4 signature based on extracted credentials.
+# The SASL client bound by "sasl.jaas.config" invokes this class.
+client.sasl.client.callback.handler.class = software.amazon.msk.auth.iam.IAMClientCallbackHandler
+```
+
+The REST proxy is started by the following:
+
+```
+./kafka-rest-start /home/ec2-user/confluent-7.2.0/etc/kafka-rest/kafka-rest.properties
+```
+
+#### Sending data to the API using Python
+
+Using the supplied `user_posting_emulation.py` script we modified this as `user_posting_emulation_kafka.py`. The basis of communicating with the REST proxy is the following:
+
+```
+invoke_url = "https://YourAPIInvokeURL/YourDeploymentStage/topics/YourTopicName"
+#To send JSON messages you need to follow this structure
+payload = json.dumps({
+    "records": [
+        {
+        #Data should be send as pairs of column_name:value, with different columns separated by commas
+        "value": {"index": df["index"], "name": df["name"], "age": df["age"], "role": df["role"]}
+        }
+    ]
+})
+
+headers = {'Content-Type': 'application/vnd.kafka.json.v2+json'}
+response = requests.request("POST", invoke_url, headers=headers, data=payload)
+```
+
+One issue of concern was that we tested sending items to the cluster, but that these did not take the form of json objects in the first instance. This necessitated rebuilding the connector and flushing the kafka topics. So for this project we need to be mindful to keep to the specified formats for data.
+
+We incorporated the above code into the posting emulation script. The most complicated factor were `datetime` objects, which json does not handle natively. We dealt with this by writing the following function, which returned a string for any instances od datetime objects:
+
+```
+def datetime_handler(obj):
+    if isinstance(obj, (datetime, date, time)):
+        return str(obj)
+```
+
+And specifying the `default=datetime_handler` argument in the `json.dumps` payload after the main dictionary was sent.
+
+We then set up three Kafka consumers, one per topic, to accept the messages that were sent to the REST proxy. These were of the format:
+
+```
+./kafka-console-consumer.sh --bootstrap-server $BOOTSTRAP_STRING --consumer.config client.properties --topic $MY_USER_NAME.geo --from-beginning --group students
+```
+
+An example output from the consumer:
+
+```
+[ec2-user@ip-172-31-47-135 bin]$ ./kafka-console-consumer.sh --bootstrap-server $BOOTSTRAP_STRING --consumer.config client.properties --topic $MY_USER_NAME.geo --from-beginning --group students
+OpenJDK 64-Bit Server VM warning: If the number of processors is expected to increase from one, then you should configure the number of parallel GC threads appropriately using -XX:ParallelGCThreads=N
+{"ind":7528,"timestamp":"2020-08-28 03:52:47","latitude":-89.9787,"longitude":-173.293,"country":"Albania"}
+{"ind":2863,"timestamp":"2020-04-27 13:34:16","latitude":-5.34445,"longitude":-177.924,"country":"Armenia"}
+{"ind":5730,"timestamp":"2021-04-19 17:37:03","latitude":-77.015,"longitude":-101.437,"country":"Colombia"}
+{"ind":8304,"timestamp":"2019-09-13 04:50:29","latitude":-28.8852,"longitude":-164.87,"country":"French Guiana"}
+{"ind":8731,"timestamp":"2020-07-17 04:39:09","latitude":-83.104,"longitude":-171.302,"country":"Aruba"}
+{"ind":1313,"timestamp":"2018-06-26 02:39:25","latitude":77.0447,"longitude":61.9119,"country":"Maldives"}
+```
+
+This was then reflected in the S3 bucket store, where they were stored `topics/<your_UserId>.pin/partition=0/`:
+
+<img src="./images/s3_geo_json.png" alt="Picture of the S3 store for the .geo messages" width="500px">
