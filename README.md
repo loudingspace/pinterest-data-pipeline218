@@ -203,3 +203,13 @@ def make_dataframe(table_name):
 ```
 
 We used this function to create three dataframes, one for each of the user, pin and geo buckets we created from the Kafka cluster.
+
+### Batch Processing: Spark on Databricks
+
+Using Databricks and Spark SQL, we cleaned the data for each of the three tables we had loaded, namely the pin table, the user table and the geo table. This involved some basic analysis of the tables, looking for values which did not cohere with others, Nulls values, and garbage values. We also ensured that columns had the appropriate data type, which included casting columns and converting to timestamp where appropriate. For the geo table, we combined the longitude and latitude columns into a co-ordinates table, and we did the same in the user table with first_name and last_name to create user_name.
+
+We then performed a series of queries which answered questions of the data. Using the ability of Spark and Databricks to use SQL, we decided to write these queries in SQL. We will also, at a later date, do these in Spark SQL. These may be found in our notebooks on Databricks as `Cleaning data and Queries`.
+
+One issue was how to deal with median values, as SQL has no inbuilt function for this. We decided to use percentiles, and use `approx_percentile` to calculate this. Sometimes this does not give the median, but the value adjacent to the median. The way around this is to count rows and write a function to handle this, but at the current time there are NULL values in the data and this prevents us from using this effectively. It may be we return to this before the end of the project and refactor this part of the project. Nevertheless, the logic in the SQL queries does address the batch processing needs of the data as it is.
+
+Because of some issues with the user_emulation script, we only have around 1500 rows of the data set, so we are missing more recent data. This had an effect on some of the later queries asking about the years 2015-2020, because our data only reaches 2017.
