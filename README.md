@@ -213,3 +213,35 @@ We then performed a series of queries which answered questions of the data. Usin
 One issue was how to deal with median values, as SQL has no inbuilt function for this. We decided to use percentiles, and use `approx_percentile` to calculate this. Sometimes this does not give the median, but the value adjacent to the median. The way around this is to count rows and write a function to handle this, but at the current time there are NULL values in the data and this prevents us from using this effectively. It may be we return to this before the end of the project and refactor this part of the project. Nevertheless, the logic in the SQL queries does address the batch processing needs of the data as it is.
 
 Because of some issues with the user_emulation script, we only have around 1500 rows of the data set, so we are missing more recent data. This had an effect on some of the later queries asking about the years 2015-2020, because our data only reaches 2017.
+
+### Batch Processing: AWS AMAA
+
+Using the MWAA environment and its S3 bucket, the already configured API token and requirements.txt file, we created a Airflow DAG to run our Spark Databricks notebook. One issue we encountered was that the task was notified as having been successful but wasn't actually running - this was due to the date being set in the future (only one day, but nevertheless it prevented us from properly testing it until we reached that day). We specified that it would run daily. In order to het the right filepath to use in the DAG we used the following command in Databricks:
+
+`dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()`
+
+And here is the DAG which we used (note the date was the issue with our task not actually starting).
+
+```
+with DAG('0af8d0adfd13_dag',  # I think this is what I'm supposed to do, changed from databricks_dag, which was the filename
+         # should be a datetime format
+         start_date=datetime(2023, 11, 26),
+         # check out possible intervals, should be a string
+         schedule_interval='@daily',
+         catchup=False,
+         default_args=default_args
+         ) as dag:
+
+        opr_submit_run = DatabricksSubmitRunOperator(
+        task_id='submit_run',
+        # the connection we set-up previously
+        databricks_conn_id='databricks_default',
+        # which cluster do we use? spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+        existing_cluster_id='CLUSTER_NAME',
+        notebook_task=notebook_task
+    )
+    opr_submit_run
+
+```
+
+We manually triggered the DAG on the MWAA Airflow UI, and scheduled it to run daily.
