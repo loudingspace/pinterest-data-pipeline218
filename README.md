@@ -244,4 +244,140 @@ with DAG('0af8d0adfd13_dag',  # I think this is what I'm supposed to do, changed
 
 ```
 
-We manually triggered the DAG on the MWAA Airflow UI, and scheduled it to run daily.
+We manually triggered the DAG on the MWAA Airflow UI, and scheduled it to run daily and it ran successfully for over 7 days.
+
+### Stream Processing: AWS Kinesis
+
+In AWS Kinesis we created the following streams:
+
+```
+    streaming-0af8d0adfd13-geo
+    streaming-0af8d0adfd13-user
+    streaming-0af8d0adfd13-pin
+```
+
+We then configured our previously created REST API in AWS API Gateway to invoke Kinesis actions. This involved making use of the [following tutorial](https://docs.aws.amazon.com/apigateway/latest/developerguide/integrating-api-with-aws-services-kinesis.html). Making use of an already created IAM Role and Policy for Kinesis `arn:aws:iam::<MYACCOUNTNAME>:role/0af8d0adfd13-kinesis-access-role`, we created an API with the following structure:
+
+```
+
+    /
+        /streams
+        GET
+            /{stream-name}
+            DELETE
+            POST
+            GET
+                /records
+                GET
+                PUT
+                /record
+                PUT
+```
+
+The ListStreams action in Kinesis was use for GET under `/streams`. CreateStream, DescribeStream, or DeleteStream action were used in `/streams/{stream-name}`. And GetRecords or PutRecords (including PutRecord) action in Kinesis were in `/streams/{stream-name}/records` and `/streams/{stream-name}/record` (PUT only).
+
+We then modified the existing user_posting_emulation.py script to use similar code for what we used for the Kafka ingestion, creating a similar function send_to_kinesis.
+
+```
+def send_to_kinesis(my_dict, stream, partition_key):
+    ''' Sends my_dict info to the Kinesis stream specified
+
+    Parameters: my_dict (dictionary)
+                stream (string)
+    '''
+
+    invoke_url = f"https://MYAPIURL/MYSTAGE/streams/{stream}/record"
+
+    keys_list = my_dict.keys()
+    values_dict = {}
+    for k in keys_list:
+        values_dict[k] = my_dict[k]
+
+    # To send JSON messages you need to follow this structure
+    payload = json.dumps({
+        "StreamName": stream,
+        "Data": values_dict,
+        "PartitionKey": partition_key
+    }, default=datetime_handler)
+
+    headers = {'Content-Type': 'application/json'}
+
+    response = requests.request(
+        "PUT", invoke_url, headers=headers, data=payload)
+```
+
+If we were to further refactor this project, we could considate these two into one module. However, we decided not to do this in this instance as the code exists separately in files that don't current cohere. As future work we could work on this and follow the OOP structure of our previous project.
+
+We then created a new notebook in Databricks `Kinesis_Processing`, which is similar to our `BatchProcessingFinal` script which was scheduled to run using the DAG in Airflow. However in this case we are adapting it to run as a stream rather than as a batch.
+
+First of all, we needed to ingest the streams into the notebook. We used the following function to do this, with an example of how we used it:
+
+```
+def get_stream(stream_suffix):
+    '''Gets the Kinesis stream with the suffix supplied in name
+
+    Parameter: name (string)
+    Returns: stream that needs serialised and which requires a struct
+
+    '''
+    return spark \
+        .readStream \
+        .format('kinesis') \
+        .option('streamName',f'streaming-0af8d0adfd13-{stream_suffix}') \
+        .option('initialPosition','earliest') \
+        .option('region','us-east-1') \
+        .option('awsAccessKey', ACCESS_KEY) \
+        .option('awsSecretKey', SECRET_KEY) \
+        .load()
+
+
+stream_geo = get_stream('geo')
+stream_pin = get_stream('pin')
+stream_user = get_stream('user')
+```
+
+However, this is not sufficient, as it was in the Batch processing, for manipulation. We need to deserialise the `data` value in each stream and then apply the appropriate schema so that we can create dataframes that can be processed. Here is an example of how we constructed on of the struct schemas:
+
+```
+struct_geo = StructType().add("ind", IntegerType())\
+    .add("timestamp", TimestampType())\
+    .add("latitude", FloatType())\
+    .add("longitude", FloatType())\
+    .add("country", StringType())
+```
+
+We then created a dataframe by applying this schema to the streamed dataframe we had to create a dataframe with the requisite types that we can then use in our cleaning pipeline. The deserialisation occurs when we `cast (data as string) jsonData`, and then we use `from_json` to take these strings and convert them into the types we specified in our schema, eg `struct_geo`:
+
+```
+def create_dataframe(stream_name, struct_name):
+    ''' Creates a dataframe from the stream supplied using the struct values
+    Parameters:
+        stream_name (string)
+        struct_name (string)
+    Returns:
+        dataframe
+    '''
+
+    return stream_name.selectExpr("cast (data as STRING) jsonData").select(from_json("jsonData", struct_name).alias("our_data")).select("our_data.*")
+```
+
+We ran the `user_posting_emulation_streaming.py` file to ingest data to Kinesis. One problem we had was that once data is in a Kinesis stream you cannot delete it until the end of the data retention period. Due to a typo, I mistakenly ingested the data from the user table into all three streams. This meant I then had to add a line in the notebook which deleted rows which had all nulls except for the index - this is a useful thing to do for data cleaning anyway, so I kept it afterwards. This is similar to a problem I had with Kafka earlier in the project where it was not possible to flush out test data I had innocently sent which then prevented my scripts from operating as they didn't have the expected structure.
+
+Once ingested, we use exactly the same cleaning functions as we did for batch processing. Again, if we were to extend this project we would probably want to modularise the code to prevent any futuer errors occuring. Finally, we save each stream to a Delta Table in Databricks. We used the following function for this:
+
+```
+def write_dataframe(df, name):
+    ''' Write stream dataframe in a delta table
+    Parameters:
+        df (string): the dataframe name
+        name: name that needs to be used, one of geo, user or pin
+    '''
+    df.writeStream \
+    .format("delta") \
+    .outputMode("append") \
+    .option("checkpointLocation", "/tmp/kinesis/_checkpoints/") \
+    .table(f"0af8d0adfd13_{name}_table")
+
+```
+
+Thus we created a pipeline that emulates the data pipeline for Pinterest, which performs batch and stream processing and which makes use of the AWS API Gateway, AWS S3 storage and AWS Kafka (for batch processing), AWS Kinesis (for Stream Processing) and Spark SQL and PySpark in Databricks for data cleaning.
