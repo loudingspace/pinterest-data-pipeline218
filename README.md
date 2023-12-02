@@ -1,4 +1,4 @@
-# pinterest-data-pipeline218
+# Pinterest Data Pipeline project using Databricks, Spark, Airflow, Kinesis, Kafka, API Gateway
 
 Pinterest crunches billions of data points every day to decide how to provide more value to their users. In this project, we are creating a similar system using the AWS Cloud.
 
